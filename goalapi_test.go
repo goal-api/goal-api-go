@@ -510,16 +510,52 @@ func TestPaginatorSurfacesTheError(t *testing.T) {
 	}
 }
 
-func TestWebSocketURLDerivesFromTheBaseURL(t *testing.T) {
+// The socket lives at /ws on the host root. /v1/ws misses nginx's "location ^~ /ws", the
+// only one with the Upgrade headers, and silently answers 200 instead of upgrading.
+func TestWebSocketURLIsHostRootNotUnderV1(t *testing.T) {
+	cases := map[string]string{
+		"https://api.goal-api.com/v1": "wss://api.goal-api.com/ws",
+		"http://localhost:3000/v1":    "ws://localhost:3000/ws",
+	}
+	for baseURL, want := range cases {
+		client, err := New("k", WithBaseURL(baseURL))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := client.WebSocketURL(); got != want {
+			t.Errorf("WebSocketURL() for %s = %q, want %q", baseURL, got, want)
+		}
+	}
+}
+
+func TestWebSocketHeaderCarriesTheKey(t *testing.T) {
 	client, err := New("k", WithBaseURL("https://api.goal-api.com/v1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := client.WebSocketURL(); got != "wss://api.goal-api.com/v1/ws" {
-		t.Errorf("WebSocketURL() = %q", got)
-	}
 	if got := client.WebSocketHeader().Get("Authorization"); got != "Bearer k" {
 		t.Errorf("Authorization = %q", got)
+	}
+}
+
+// The gateway authorises the upgrade from the header, then websocket-service needs this
+// frame first or it closes with 4001.
+func TestAuthMessageIsTheFirstFrame(t *testing.T) {
+	client, err := New("secret-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := client.AuthMessage()
+	if frame["type"] != "auth" || frame["apiKey"] != "secret-key" {
+		t.Errorf("AuthMessage() = %v", frame)
+	}
+
+	tokenFrame := AuthMessageWithToken("tok_123")
+	if tokenFrame["type"] != "auth" || tokenFrame["token"] != "tok_123" {
+		t.Errorf("AuthMessageWithToken() = %v", tokenFrame)
+	}
+	if _, leaked := tokenFrame["apiKey"]; leaked {
+		t.Error("the browser frame must not carry the API key")
 	}
 }
 
