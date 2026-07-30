@@ -1,2 +1,4 @@
 # Build output from `go build` in the module root.
 /goal-api-go
+# The example is a separate module; its binary must not be committed.
+/examples/live/goalapi-live-example
