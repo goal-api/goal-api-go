@@ -1,0 +1,42 @@
+name: publish
+
+# Go has no registry: the tag is the release. This validates the tag, confirms the
+# version constant matches, and warms proxy.golang.org so the first `go get` is quick.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: tag matches the Version constant
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/v}"
+          constant=$(grep -oP 'Version = "\K[^"]+' goalapi.go)
+          if [ "$tag" != "$constant" ]; then
+            echo "::error::tag v$tag but goalapi.go says $constant"
+            exit 1
+          fi
+
+      - run: go vet ./...
+      - run: go test -race ./...
+
+      - name: ask the module proxy to fetch it
+        if: github.event_name == 'push'
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          module=$(go list -m)
+          curl -sS "https://proxy.golang.org/${module}/@v/${tag}.info" \
+            || echo "::notice::the proxy will index ${tag} on first fetch"
