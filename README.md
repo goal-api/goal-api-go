@@ -219,6 +219,19 @@ quota := client.RateLimit()
 
 ## Live WebSocket updates
 
+> The socket is at `wss://api.goal-api.com/ws`, **not** `/v1/ws`. Only nginx's
+> `location ^~ /ws` carries the `Upgrade` headers; `/v1/ws` is proxied as ordinary HTTP and
+> answers 200 instead of upgrading. The SDK derives the right URL for you.
+>
+> Two services authenticate: the gateway authorises the upgrade from the header or
+> `?wsToken=`, then websocket-service needs an `{"type": "auth", ...}` frame as the very
+> first message. The SDK sends it, and treats `auth_success` as the point the connection is
+> usable.
+>
+> **`subscribe` is capped per plan and the cap can be 0.** `auth_success` reports
+> `maxSubscriptions`; if it is 0 the socket works but no `match_update` will ever arrive.
+> See the known server issue in [`ENDPOINTS.md`](ENDPOINTS.md).
+
 There is no WebSocket client here. This package has no dependencies and the standard
 library has no WebSocket support, so rather than pick one for you it exposes the two
 GOAL-specific pieces (the URL and the auth) and you bring your own socket library.
@@ -315,6 +328,23 @@ For an endpoint this SDK doesn't wrap yet:
 var page goalapi.Page
 err := client.Get(ctx, "/some/new/endpoint", goalapi.Params{"limit": 10}, &page)
 ```
+
+## Examples
+
+| Directory | Shows |
+|---|---|
+| [`examples/basic`](examples/basic) | Status, live fixtures, standings, pagination |
+| [`examples/live`](examples/live) | The live socket, using `coder/websocket` |
+| [`examples/export`](examples/export) | Walking every page of a collection to CSV |
+
+```bash
+GOAL_API_KEY=... go run ./examples/basic
+GOAL_API_KEY=... go run ./examples/export > countries.csv
+cd examples/live && GOAL_API_KEY=... go run .
+```
+
+`examples/live` is its own module, so the SDK itself keeps zero dependencies while the
+example can use a WebSocket library.
 
 ## Testing
 
