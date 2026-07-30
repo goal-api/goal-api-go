@@ -328,6 +328,11 @@ go run ./examples/basic
 The live tests skip themselves without a key. Endpoint-by-endpoint coverage of the API
 lives in `tools/sweep.py` in the SDK workspace.
 
-## License
+## Licence
 
-MIT
+MIT. See [LICENSE](LICENSE).
+
+No dependencies, direct or transitive: standard library only, which is why there is no
+`go.sum`. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+Security issues: [SECURITY.md](SECURITY.md).
