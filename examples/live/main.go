@@ -87,15 +87,27 @@ func main() {
 		fmt.Printf("  subscribe rejected: %s %s\n", msg.Code, msg.Message)
 	})
 
+	// A match_update is the provider's live shape, not the REST fixture shape: scores are
+	// strings and match_status is the minute. Decoding it into the type used for
+	// /fixtures above would compile and quietly give you empty fields.
 	live.On(goalapi.LiveMatchUpdate, func(msg goalapi.LiveMessage) {
 		var update struct {
-			HomeTeam  struct{ Name string } `json:"homeTeam"`
-			AwayTeam  struct{ Name string } `json:"awayTeam"`
-			HomeScore *int                  `json:"homeScore"`
-			AwayScore *int                  `json:"awayScore"`
+			// The fixture id we subscribed with. MatchID is the provider's.
+			ID        string `json:"id"`
+			MatchID   string `json:"match_id"`
+			HomeName  string `json:"match_hometeam_name"`
+			AwayName  string `json:"match_awayteam_name"`
+			HomeScore string `json:"match_hometeam_score"`
+			AwayScore string `json:"match_awayteam_score"`
+			Status    string `json:"match_status"`
 		}
-		_ = msg.Into(&update)
-		fmt.Printf("  UPDATE  %s v %s\n", update.HomeTeam.Name, update.AwayTeam.Name)
+		if err := msg.Into(&update); err != nil {
+			fmt.Fprintln(os.Stderr, "  could not decode update:", err)
+			return
+		}
+		fmt.Printf("  UPDATE  %-22s %s-%s %-22s  %s'  (%s)\n",
+			update.HomeName, update.HomeScore, update.AwayScore, update.AwayName,
+			update.Status, update.ID)
 	})
 
 	live.On(goalapi.LivePong, func(goalapi.LiveMessage) {
