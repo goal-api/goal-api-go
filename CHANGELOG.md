@@ -17,4 +17,8 @@ First release. Covers the full public API surface (13 resource groups, ~70 endpo
 - Rate-limit snapshot from the `X-RateLimit-*` headers.
 - Pagination helpers that terminate on `hasMore: false` or a short page.
 - Webhook signature verification with constant-time comparison and a replay window.
+- A WebSocket client for live match updates: `client.Live()` owns the socket, the auth
+  handshake, keepalives and reconnection, replaying subscriptions after a reconnect. The
+  RFC 6455 client is implemented on the standard library in `ws.go`, so the module still
+  has no dependencies.
 - Percent-encoded path segments.

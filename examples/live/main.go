@@ -1,10 +1,10 @@
 // GOAL_API_KEY=... go run ./examples/live
 //
-// Connects to the live socket, subscribes to whatever is in play, and prints every frame
+// Connects to the live socket, subscribes to whatever is in play, and reports every frame
 // the server sends. Exits non-zero if nothing arrives, so it works as a smoke test.
 //
-// This module has no dependencies, so the example brings its own WebSocket library. It is
-// in examples/ rather than the module root, so `go get` on the SDK still pulls nothing.
+// Part of the main module: the SDK ships its own WebSocket client, so this needs no
+// dependencies and no go.mod of its own.
 package main
 
 import (
@@ -12,9 +12,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/signal"
 	"time"
 
-	"github.com/coder/websocket"
 	goalapi "github.com/goal-api/goal-api-go"
 )
 
@@ -27,9 +27,9 @@ type fixture struct {
 func main() {
 	apiKey := os.Getenv("GOAL_API_KEY")
 	if apiKey == "" {
-		fmt.Fprintln(os.Stderr, "GOAL_API_KEY is not set.")
-		os.Exit(2)
+		fail(fmt.Errorf("GOAL_API_KEY is not set"))
 	}
+
 	listen := 30 * time.Second
 	if v := os.Getenv("LISTEN_SECONDS"); v != "" {
 		if d, err := time.ParseDuration(v + "s"); err == nil {
@@ -41,115 +41,110 @@ func main() {
 	if err != nil {
 		fail(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), listen+30*time.Second)
+
+	// Ctrl-C ends the run cleanly instead of killing it mid-frame.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, listen+30*time.Second)
 	defer cancel()
 
 	page, err := client.Fixtures.Live(ctx, nil)
 	if err != nil {
 		fail(err)
 	}
-	var live []fixture
-	if err := page.Into(&live); err != nil {
+	var fixtures []fixture
+	if err := page.Into(&fixtures); err != nil {
 		fail(err)
 	}
-	fmt.Printf("%d match(es) in play\n", len(live))
-	if len(live) > 5 {
-		live = live[:5]
+	fmt.Printf("%d match(es) in play\n", len(fixtures))
+	if len(fixtures) > 5 {
+		fixtures = fixtures[:5]
 	}
-	for _, m := range live {
+	for _, m := range fixtures {
 		fmt.Printf("  %s  %s v %s\n", m.ID, m.HomeTeam.Name, m.AwayTeam.Name)
 	}
 
-	conn, _, err := websocket.Dial(ctx, client.WebSocketURL(), &websocket.DialOptions{
-		HTTPHeader: client.WebSocketHeader(),
+	live := client.Live()
+	seen := map[string]int{}
+
+	live.On(goalapi.LiveAuthSuccess, func(msg goalapi.LiveMessage) {
+		var auth struct {
+			Plan             string `json:"plan"`
+			MaxSubscriptions int    `json:"maxSubscriptions"`
+		}
+		_ = msg.Into(&auth)
+		fmt.Printf("\nauthenticated: plan=%s maxSubscriptions=%d\n", auth.Plan, auth.MaxSubscriptions)
+		if auth.MaxSubscriptions == 0 {
+			fmt.Println("  this plan allows 0 concurrent subscriptions, so no match_update can arrive")
+		}
 	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "\ndial failed: %v\n", err)
+
+	live.On(goalapi.LiveSubscribeResponse, func(msg goalapi.LiveMessage) {
+		if msg.Success != nil && *msg.Success {
+			fmt.Println("  subscribed")
+			return
+		}
+		fmt.Printf("  subscribe rejected: %s %s\n", msg.Code, msg.Message)
+	})
+
+	live.On(goalapi.LiveMatchUpdate, func(msg goalapi.LiveMessage) {
+		var update struct {
+			HomeTeam  struct{ Name string } `json:"homeTeam"`
+			AwayTeam  struct{ Name string } `json:"awayTeam"`
+			HomeScore *int                  `json:"homeScore"`
+			AwayScore *int                  `json:"awayScore"`
+		}
+		_ = msg.Into(&update)
+		fmt.Printf("  UPDATE  %s v %s\n", update.HomeTeam.Name, update.AwayTeam.Name)
+	})
+
+	live.On(goalapi.LivePong, func(goalapi.LiveMessage) {
+		fmt.Println("  pong")
+	})
+
+	// Counting every type, including the ones without a handler above.
+	live.On(goalapi.LiveEventAny, func(msg goalapi.LiveMessage) {
+		seen[msg.Type]++
+	})
+
+	// Connect returns once the server has accepted the auth frame, so subscribing
+	// immediately afterwards is safe.
+	if err := live.Connect(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "\nconnect failed: %v\n", err)
 		os.Exit(1)
 	}
-	defer conn.CloseNow()
+	defer live.Close()
 
-	// Must be the first frame on the wire, or the server closes with 4001.
-	if err := write(ctx, conn, client.AuthMessage()); err != nil {
-		fail(err)
-	}
-
-	seen := map[string]int{}
-	deadline := time.Now().Add(listen)
-
-	for time.Now().Before(deadline) {
-		readCtx, cancelRead := context.WithDeadline(ctx, deadline)
-		_, data, err := conn.Read(readCtx)
-		cancelRead()
-		if err != nil {
-			break
-		}
-
-		var msg goalapi.LiveMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			continue
-		}
-		seen[msg.Type]++
-
-		switch msg.Type {
-		case goalapi.LiveAuthSuccess:
-			var auth struct {
-				Plan             string `json:"plan"`
-				MaxSubscriptions int    `json:"maxSubscriptions"`
-			}
-			_ = msg.Into(&auth)
-			fmt.Printf("\nauthenticated: plan=%s maxSubscriptions=%d\n", auth.Plan, auth.MaxSubscriptions)
-			if auth.MaxSubscriptions == 0 {
-				fmt.Println("  this plan allows 0 concurrent subscriptions, so no match_update can arrive")
-			}
-			for _, m := range live {
-				_ = write(ctx, conn, goalapi.SubscribeMessage(m.ID))
-			}
-			_ = write(ctx, conn, goalapi.ListSubscriptionsMessage())
-			_ = write(ctx, conn, goalapi.PingMessage())
-			fmt.Printf("\nlistening for %s ...\n", listen)
-
-		case goalapi.LiveSubscribeResponse:
-			var envelope struct {
-				Success bool                           `json:"success"`
-				Error   struct{ Code, Message string } `json:"error"`
-			}
-			_ = json.Unmarshal(data, &envelope)
-			if envelope.Success {
-				fmt.Println("  subscribed")
-			} else {
-				fmt.Printf("  subscribe rejected: %s %s\n", envelope.Error.Code, envelope.Error.Message)
-			}
-
-		case goalapi.LiveMatchUpdate:
-			var update struct {
-				HomeTeam  struct{ Name string } `json:"homeTeam"`
-				AwayTeam  struct{ Name string } `json:"awayTeam"`
-				HomeScore *int                  `json:"homeScore"`
-				AwayScore *int                  `json:"awayScore"`
-			}
-			_ = msg.Into(&update)
-			fmt.Printf("  UPDATE  %s v %s\n", update.HomeTeam.Name, update.AwayTeam.Name)
-
-		case goalapi.LivePong:
-			fmt.Println("  pong")
+	for _, m := range fixtures {
+		if err := live.Subscribe(m.ID); err != nil {
+			fail(err)
 		}
 	}
+	_ = live.ListSubscriptions()
+	_ = live.Ping()
 
-	_ = conn.Close(websocket.StatusNormalClosure, "done")
-	fmt.Printf("\nreceived: %v\n", seen)
+	fmt.Printf("\nlistening for %s ...\n", listen)
+
+	// Stop listening on our own schedule rather than waiting for the socket to end.
+	listenCtx, done := context.WithTimeout(ctx, listen)
+	defer done()
+	if err := live.Run(listenCtx); err != nil && !isExpectedStop(err) {
+		fmt.Fprintf(os.Stderr, "\nlive feed stopped: %v\n", err)
+		os.Exit(1)
+	}
+
+	report, _ := json.Marshal(seen)
+	fmt.Printf("\nreceived: %s\n", report)
 	if seen[goalapi.LiveAuthSuccess] == 0 {
 		fmt.Fprintln(os.Stderr, "nothing was received from the socket")
 		os.Exit(1)
 	}
 }
 
-func write(ctx context.Context, conn *websocket.Conn, message map[string]any) error {
-	payload, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-	return conn.Write(ctx, websocket.MessageText, payload)
+// isExpectedStop reports whether Run ended because our own deadline expired, which is how
+// this example is meant to finish.
+func isExpectedStop(err error) bool {
+	return err == context.DeadlineExceeded || err == context.Canceled
 }
 
 func fail(err error) {

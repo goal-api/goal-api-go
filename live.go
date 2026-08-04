@@ -9,17 +9,23 @@ import (
 
 // WebSocket support.
 //
-// There is no WebSocket client here. This package has no dependencies and the standard
-// library has no WebSocket support, so instead of picking one for you it exposes the two
-// GOAL-specific pieces (the URL and the auth) and you bring your own socket library:
-// github.com/coder/websocket, github.com/gorilla/websocket, nhooyr.io/websocket.
+// LiveClient is the client, and for almost everything it is what you want:
+//
+//	live := client.Live()
+//	if err := live.Connect(ctx); err != nil { return err }
+//	defer live.Close()
+//	live.Subscribe(fixtureID)
+//	for msg := range live.Messages() { ... }
+//
+// The pieces below are what LiveClient is built from, kept exported because the protocol
+// is the contract. Reach for them when you want the frames without the connection
+// management: driving the socket from an existing event loop, or through a WebSocket
+// library you already depend on.
 //
 // The connection authenticates twice, because two services are involved. The gateway
 // authorises the HTTP upgrade from the Authorization header, and websocket-service then
 // requires an auth frame as the very first message, closing with 4001 if anything else
 // arrives first. AuthMessage() builds that frame.
-//
-//	import "github.com/coder/websocket"
 //
 //	conn, _, err := websocket.Dial(ctx, client.WebSocketURL(), &websocket.DialOptions{
 //	    HTTPHeader: client.WebSocketHeader(),

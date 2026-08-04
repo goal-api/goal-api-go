@@ -1,9 +1,9 @@
 # goal-go
 
 Go client for the [GOAL API](https://goal-api.com): football fixtures, live scores,
-standings, player stats and odds.
+standings, player stats, odds and real-time match updates over WebSocket.
 
-Standard library only, no dependencies. Go 1.21+.
+Standard library only, no dependencies — including the WebSocket client. Go 1.21+.
 
 ```bash
 go get github.com/goal-api/goal-api-go
@@ -232,35 +232,31 @@ quota := client.RateLimit()
 > `maxSubscriptions`; if it is 0 the socket works but no `match_update` will ever arrive.
 > See the known server issue in [`ENDPOINTS.md`](ENDPOINTS.md).
 
-There is no WebSocket client here. This package has no dependencies and the standard
-library has no WebSocket support, so rather than pick one for you it exposes the two
-GOAL-specific pieces (the URL and the auth) and you bring your own socket library.
+`client.Live()` is the client. It owns the socket, the auth handshake, keepalives and
+reconnection, and it still pulls in no dependencies: the RFC 6455 client is implemented on
+the standard library in [`ws.go`](ws.go).
 
 ```go
-import "github.com/coder/websocket"
+live := client.Live()
 
-conn, _, err := websocket.Dial(ctx, client.WebSocketURL(), &websocket.DialOptions{
-    HTTPHeader: client.WebSocketHeader(),   // Authorization: Bearer <key>
+live.On(goalapi.LiveMatchUpdate, func(msg goalapi.LiveMessage) {
+    var update MatchUpdate
+    _ = msg.Into(&update)
 })
-if err != nil {
+
+if err := live.Connect(ctx); err != nil {   // returns once auth_success arrives
     return err
 }
-defer conn.CloseNow()
+defer live.Close()
 
-sub, _ := json.Marshal(goalapi.SubscribeMessage(fixtureID))
-if err := conn.Write(ctx, websocket.MessageText, sub); err != nil {
-    return err
-}
+live.Subscribe(fixtureID)
+live.Run(ctx)                               // blocks until ctx ends or it gives up
+```
 
-for {
-    _, data, err := conn.Read(ctx)
-    if err != nil {
-        return err
-    }
-    var msg goalapi.LiveMessage
-    if err := json.Unmarshal(data, &msg); err != nil {
-        continue
-    }
+Or skip handlers and range over the channel, which is usually the more Go-shaped way:
+
+```go
+for msg := range live.Messages() {
     if msg.Type == goalapi.LiveMatchUpdate {
         var update MatchUpdate
         _ = msg.Into(&update)
@@ -268,9 +264,28 @@ for {
 }
 ```
 
-Message builders: `SubscribeMessage`, `UnsubscribeMessage`, `PingMessage`,
-`StatusMessage`, `ListSubscriptionsMessage`. Server message types: `LiveMatchUpdate`,
-`LiveAuthSuccess`, `LiveStatus`, `LivePong`, `LiveServerShutdown`, `LiveError`.
+Handlers run on the reader goroutine, one message at a time, so a handler that blocks
+stops the feed; hand slow work to a goroutine of your own. `Messages()` is a buffered
+channel (1000 by default) that drops the oldest message when a consumer falls behind,
+so a slow reader costs history rather than the connection.
+
+Subscriptions are replayed after a reconnect, because the server does not remember a
+dropped connection's. Options: `WithLiveAutoReconnect`, `WithLiveMaxReconnectAttempts`,
+`WithLivePingInterval`, `WithLiveReadTimeout`, `WithLiveQueueSize`, `WithLiveAuthTimeout`,
+`WithLiveTLSConfig`, `WithLiveConnectToken`, `WithLiveURL`.
+
+Events: the server types below, plus `LiveEventOpen` and `LiveEventClose` for the
+transport itself, and `LiveEventAny` for everything.
+
+### Driving the socket yourself
+
+The frame builders stay exported, for when you want the protocol without the connection
+management — an existing event loop, or a WebSocket library you already depend on:
+`SubscribeMessage`, `UnsubscribeMessage`, `PingMessage`, `StatusMessage`,
+`ListSubscriptionsMessage`, alongside `WebSocketURL()`, `WebSocketHeader()` and
+`AuthMessage()`. Server message types: `LiveMatchUpdate`, `LiveAuthSuccess`, `LiveStatus`,
+`LivePong`, `LiveServerShutdown`, `LiveError`, `LiveSubscribeResponse`,
+`LiveUnsubscribeResponse`, `LiveGetSubscriptionsResponse`.
 
 The server caps client messages at 60/minute and concurrent subscriptions by plan. Only
 `resource: "match"` is supported.
@@ -334,17 +349,14 @@ err := client.Get(ctx, "/some/new/endpoint", goalapi.Params{"limit": 10}, &page)
 | Directory | Shows |
 |---|---|
 | [`examples/basic`](examples/basic) | Status, live fixtures, standings, pagination |
-| [`examples/live`](examples/live) | The live socket, using `coder/websocket` |
+| [`examples/live`](examples/live) | The live socket: subscribing and handling frames |
 | [`examples/export`](examples/export) | Walking every page of a collection to CSV |
 
 ```bash
 GOAL_API_KEY=... go run ./examples/basic
+GOAL_API_KEY=... go run ./examples/live
 GOAL_API_KEY=... go run ./examples/export > countries.csv
-cd examples/live && GOAL_API_KEY=... go run .
 ```
-
-`examples/live` is its own module, so the SDK itself keeps zero dependencies while the
-example can use a WebSocket library.
 
 ## Testing
 
