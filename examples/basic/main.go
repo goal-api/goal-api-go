@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	goalapi "github.com/Devara-sarl/goal-api-go"
+	goalapi "github.com/goal-api/goal-api-go"
 )
 
 type component struct {

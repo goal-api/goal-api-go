@@ -6,7 +6,7 @@ standings, player stats and odds.
 Standard library only, no dependencies. Go 1.21+.
 
 ```bash
-go get github.com/Devara-sarl/goal-api-go
+go get github.com/goal-api/goal-api-go
 ```
 
 ## Quick start
@@ -20,7 +20,7 @@ import (
     "log"
     "os"
 
-    goalapi "github.com/Devara-sarl/goal-api-go"
+    goalapi "github.com/goal-api/goal-api-go"
 )
 
 type Fixture struct {

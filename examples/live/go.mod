@@ -5,8 +5,8 @@ module goalapi-live-example
 go 1.21
 
 require (
-	github.com/Devara-sarl/goal-api-go v0.0.0
+	github.com/goal-api/goal-api-go v0.0.0
 	github.com/coder/websocket v1.8.12
 )
 
-replace github.com/Devara-sarl/goal-api-go => ../..
+replace github.com/goal-api/goal-api-go => ../..

@@ -11,7 +11,7 @@ import (
 	"os"
 	"strconv"
 
-	goalapi "github.com/Devara-sarl/goal-api-go"
+	goalapi "github.com/goal-api/goal-api-go"
 )
 
 type country struct {

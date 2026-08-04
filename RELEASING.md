@@ -26,7 +26,7 @@ Go has no registry. `go get` reads the tag straight from this repository, and
 `go.mod` declares the module path. The publish workflow only validates the tag and
 warms `proxy.golang.org`.
 
-The module path is `github.com/Devara-sarl/goal-api-go`, which matches this repo root,
+The module path is `github.com/goal-api/goal-api-go`, which matches this repo root,
 so nothing else is required.
 
 ## Package name
