@@ -60,6 +60,7 @@ type Client struct {
 	H2H         *H2HService
 	Results     *ResultsService
 	Videos      *VideosService
+	News        *NewsService
 	Odds        *OddsService
 	Predictions *PredictionsService
 }
@@ -131,6 +132,7 @@ func New(apiKey string, opts ...Option) (*Client, error) {
 	c.H2H = &H2HService{c}
 	c.Results = &ResultsService{c}
 	c.Videos = &VideosService{c}
+	c.News = &NewsService{c}
 	c.Odds = &OddsService{c}
 	c.Predictions = &PredictionsService{c}
 

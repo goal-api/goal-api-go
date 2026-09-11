@@ -555,6 +555,52 @@ func (s *VideosService) ByDate(ctx context.Context, date string, params Params) 
 	return s.c.page(ctx, path, params)
 }
 
+// NewsService covers /news: "leagueId", "teamId", "matchId", "from", "to",
+// "limit" (max 100, default 20), "offset".
+//
+// The ids are the news source's, not ours: an article can reference a team or
+// competition that has no row behind /teams or /leagues, which is why each article
+// also carries teamName and leagueName. Ordered by publishedAt, newest first.
+type NewsService struct{ c *Client }
+
+func (s *NewsService) List(ctx context.Context, params Params) (*Page, error) {
+	return s.c.page(ctx, "/news", params)
+}
+
+func (s *NewsService) ByMatch(ctx context.Context, matchID string, params Params) (*Page, error) {
+	path, err := pathOf("/news/match", matchID)
+	if err != nil {
+		return nil, err
+	}
+	return s.c.page(ctx, path, params)
+}
+
+func (s *NewsService) ByTeam(ctx context.Context, teamID string, params Params) (*Page, error) {
+	path, err := pathOf("/news/team", teamID)
+	if err != nil {
+		return nil, err
+	}
+	return s.c.page(ctx, path, params)
+}
+
+func (s *NewsService) ByLeague(ctx context.Context, leagueID string, params Params) (*Page, error) {
+	path, err := pathOf("/news/league", leagueID)
+	if err != nil {
+		return nil, err
+	}
+	return s.c.page(ctx, path, params)
+}
+
+// Get returns one article, by our id or the provider's own news key. It 404s rather
+// than returning an empty object when there is no such article.
+func (s *NewsService) Get(ctx context.Context, id string) (*Page, error) {
+	path, err := pathOf("/news", id)
+	if err != nil {
+		return nil, err
+	}
+	return s.c.page(ctx, path, nil)
+}
+
 // OddsService covers /odds: "bookmaker", "matchId", "limit" (max 200, default 50), "offset".
 type OddsService struct{ c *Client }
 

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -643,5 +644,32 @@ func TestVerifyWebhookRejectsANonJSONBody(t *testing.T) {
 	body := `not json`
 	if _, err := VerifyWebhook([]byte(body), signPayload(body, time.Now().Unix()), testSecret, 0); !errors.Is(err, ErrWebhookSignature) {
 		t.Fatalf("expected ErrWebhookSignature, got %v", err)
+	}
+}
+
+// The /news surface as ENDPOINTS.md specifies it. The ids in the filters are the news
+// source's, not ours, so they must travel to the wire untouched.
+func TestNewsListForwardsFilters(t *testing.T) {
+	var gotPath, gotQuery string
+	client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":[]}`))
+	})
+
+	_, err := client.News.List(context.Background(), Params{
+		"leagueId": "3", "teamId": "150", "from": "2026-09-01", "limit": 5,
+	})
+	if err != nil {
+		t.Fatalf("News.List: %v", err)
+	}
+	if gotPath != "/news" {
+		t.Errorf("path = %q, want /news", gotPath)
+	}
+	for _, want := range []string{"leagueId=3", "teamId=150", "from=2026-09-01", "limit=5"} {
+		if !strings.Contains(gotQuery, want) {
+			t.Errorf("query %q missing %q", gotQuery, want)
+		}
 	}
 }
