@@ -87,12 +87,12 @@ func main() {
 		fmt.Printf("  subscribe rejected: %s %s\n", msg.Code, msg.Message)
 	})
 
-	// A match_update is the provider's live shape, not the REST fixture shape: scores are
+	// A match_update is the raw live shape, not the REST fixture shape: scores are
 	// strings and match_status is the minute. Decoding it into the type used for
 	// /fixtures above would compile and quietly give you empty fields.
 	live.On(goalapi.LiveMatchUpdate, func(msg goalapi.LiveMessage) {
 		var update struct {
-			// The fixture id we subscribed with. MatchID is the provider's.
+			// The fixture id we subscribed with. MatchID is the numeric apiId.
 			ID        string `json:"id"`
 			MatchID   string `json:"match_id"`
 			HomeName  string `json:"match_hometeam_name"`

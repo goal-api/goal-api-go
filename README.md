@@ -73,8 +73,8 @@ Retries use exponential backoff with full jitter and always honour a server-sent
 
 ## Responses
 
-`Page` and `Item` keep `Data` as `json.RawMessage`, since rows are provider-shaped and
-change. Decode into your own types:
+`Page` and `Item` keep `Data` as `json.RawMessage`, since rows follow the API's response
+shapes and change. Decode into your own types:
 
 ```go
 page, err := client.Leagues.Standings(ctx, leagueID, nil)

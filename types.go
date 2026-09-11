@@ -78,7 +78,7 @@ type Pagination struct {
 }
 
 // Page is a collection response. Data stays json.RawMessage because rows are
-// provider-shaped and change; decode into your own type:
+// shaped by the API's responses and change; decode into your own type:
 //
 //	var teams []Team
 //	if err := page.Into(&teams); err != nil { ... }

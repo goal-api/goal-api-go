@@ -316,7 +316,7 @@ func (s *FixturesService) Commentary(ctx context.Context, fixtureID string) (*Pa
 
 // StandingsService covers /standings. Every method takes an optional "stage".
 //
-// Home and Away 404 for leagues where the provider has no home/away split, even when the
+// Home and Away 404 for leagues with no home/away split, even when the
 // base table has rows.
 type StandingsService struct{ c *Client }
 
@@ -591,7 +591,7 @@ func (s *NewsService) ByLeague(ctx context.Context, leagueID string, params Para
 	return s.c.page(ctx, path, params)
 }
 
-// Get returns one article, by our id or the provider's own news key. It 404s rather
+// Get returns one article, by our id or the article's apiId. It 404s rather
 // than returning an empty object when there is no such article.
 func (s *NewsService) Get(ctx context.Context, id string) (*Page, error) {
 	path, err := pathOf("/news", id)
